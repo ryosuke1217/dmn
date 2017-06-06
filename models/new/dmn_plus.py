@@ -1,6 +1,6 @@
 import numpy as np
 import tensorflow as tf
-from tensorflow.python.ops import rnn_cell
+import tensorflow.contrib.rnn as rnn
 
 from models.base_model import BaseModel
 from models.new.episode_module import EpisodeModule
@@ -26,20 +26,22 @@ class DMN(BaseModel):
         self.att = tf.constant(0.)
 
         # Prepare parameters
-        gru = rnn_cell.GRUCell(d)
+        gru_f = rnn.GRUCell(d)
+        gru_b = rnn.GRUCell(d)
+        gru_q = rnn.GRUCell(d)
         l = self.positional_encoding()
         embedding = weight('embedding', [A, V], init='uniform', range=3**(1/2))
 
         with tf.name_scope('SentenceReader'):
-            input_list = tf.unpack(tf.transpose(input))  # L x [F, N]
+            input_list = tf.unstack(tf.transpose(input))  # L x [F, N]
             input_embed = []
             for facts in input_list:
-                facts = tf.unpack(facts)
-                embed = tf.pack([tf.nn.embedding_lookup(embedding, w) for w in facts])  # [F, N, V]
+                facts = tf.unstack(facts)
+                embed = tf.stack([tf.nn.embedding_lookup(embedding, w) for w in facts])  # [F, N, V]
                 input_embed.append(embed)
 
             # apply positional encoding
-            input_embed = tf.transpose(tf.pack(input_embed), [2, 1, 0, 3])  # [N, F, L, V]
+            input_embed = tf.transpose(tf.stack(input_embed), [2, 1, 0, 3])  # [N, F, L, V]
             encoded = l * input_embed * input_mask
             facts = tf.reduce_sum(encoded, 2)  # [N, F, V]
 
@@ -49,19 +51,19 @@ class DMN(BaseModel):
         with tf.name_scope('InputFusion'):
             # Bidirectional RNN
             with tf.variable_scope('Forward'):
-                forward_states, _ = tf.nn.dynamic_rnn(gru, facts, fact_counts, dtype=tf.float32)
+                forward_states, _ = tf.nn.dynamic_rnn(gru_f, facts, fact_counts, dtype=tf.float32)
 
             with tf.variable_scope('Backward'):
                 facts_reverse = tf.reverse_sequence(facts, fact_counts, 1)
-                backward_states, _ = tf.nn.dynamic_rnn(gru, facts_reverse, fact_counts, dtype=tf.float32)
+                backward_states, _ = tf.nn.dynamic_rnn(gru_b, facts_reverse, fact_counts, dtype=tf.float32)
 
             # Use forward and backward states both
             facts = forward_states + backward_states  # [N, F, d]
 
         with tf.variable_scope('Question'):
-            ques_list = tf.unpack(tf.transpose(question))
+            ques_list = tf.unstack(tf.transpose(question))
             ques_embed = [tf.nn.embedding_lookup(embedding, w) for w in ques_list]
-            _, question_vec = tf.nn.rnn(gru, ques_embed, dtype=tf.float32)
+            _, question_vec = rnn.static_rnn(gru_q, ques_embed, dtype=tf.float32)
 
         # Episodic Memory
         with tf.variable_scope('Episodic'):
@@ -75,7 +77,7 @@ class DMN(BaseModel):
                     else:
                         # ReLU update
                         c = episode.new(memory)
-                        concated = tf.concat(1, [memory, c, question_vec])
+                        concated = tf.concat(axis=1, values=[memory, c, question_vec])
 
                         w_t = weight('w_t', [3 * d, d])
                         z = tf.matmul(concated, w_t)
@@ -100,7 +102,7 @@ class DMN(BaseModel):
 
         with tf.name_scope('Loss'):
             # Cross-Entropy loss
-            cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits, answer)
+            cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=answer)
             loss = tf.reduce_mean(cross_entropy)
             total_loss = loss + params.weight_decay * tf.add_n(tf.get_collection('l2'))
 

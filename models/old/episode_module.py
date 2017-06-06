@@ -47,7 +47,7 @@ class EpisodeModule:
         with tf.variable_scope('attention'):
             # NOTE THAT instead of L1 norm we used L2
             q = self.question_transposed
-            vec = tf.concat(0, [c, m, q, c*q, c*m, (c-q)**2, (c-m)**2])  # (7*d, N)
+            vec = tf.concat(axis=0, values=[c, m, q, c*q, c*m, (c-q)**2, (c-m)**2])  # (7*d, N)
 
             # attention learning
             l1 = tf.matmul(self.w1, vec) + self.b1  # (N, d)

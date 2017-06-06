@@ -29,26 +29,26 @@ class DMN(BaseModel):
 
         # Input module
         with tf.variable_scope('input') as scope:
-            input_list = tf.unpack(tf.transpose(input))
+            input_list = tf.unstack(tf.transpose(input))
             input_states, _ = seq2seq.embedding_rnn_decoder(input_list, gru.zero_state(N, tf.float32), gru, A, V)
 
             # Question module
             scope.reuse_variables()
 
-            ques_list = tf.unpack(tf.transpose(question))
+            ques_list = tf.unstack(tf.transpose(question))
             questions, _ = seq2seq.embedding_rnn_decoder(ques_list, gru.zero_state(N, tf.float32), gru, A, V)
             question_vec = questions[-1]  # use final state
 
         # Masking: to extract fact vectors at end of sentence. (details in paper)
-        input_states = tf.transpose(tf.pack(input_states), [1, 0, 2])  # [N, L, D]
+        input_states = tf.transpose(tf.stack(input_states), [1, 0, 2])  # [N, L, D]
         facts = []
         for n in range(N):
             filtered = tf.boolean_mask(input_states[n, :, :], input_mask[n, :])  # [?, D]
-            padding = tf.zeros(tf.pack([F - tf.shape(filtered)[0], d]))
-            facts.append(tf.concat(0, [filtered, padding]))  # [F, D]
+            padding = tf.zeros(tf.stack([F - tf.shape(filtered)[0], d]))
+            facts.append(tf.concat(axis=0, values=[filtered, padding]))  # [F, D]
 
-        facked = tf.pack(facts)  # packing for transpose... I hate TF so much
-        facts = tf.unpack(tf.transpose(facked, [1, 0, 2]), num=F)  # F x [N, D]
+        facked = tf.stack(facts)  # packing for transpose... I hate TF so much
+        facts = tf.unstack(tf.transpose(facked, [1, 0, 2]), num=F)  # F x [N, D]
 
         # Episodic Memory
         with tf.variable_scope('episodic') as scope:
@@ -71,7 +71,7 @@ class DMN(BaseModel):
 
         with tf.name_scope('Loss'):
             # Cross-Entropy loss
-            cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits, answer)
+            cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=answer)
             loss = tf.reduce_mean(cross_entropy)
             total_loss = loss + params.weight_decay * tf.add_n(tf.get_collection('l2'))
 

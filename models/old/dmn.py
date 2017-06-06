@@ -41,15 +41,15 @@ class DMN(BaseModel):
             question_vec = questions[-1]  # use final state
 
         # Masking: to extract fact vectors at end of sentence. (details in paper)
-        input_states = tf.transpose(tf.pack(input_states), [1, 0, 2])  # [N, L, D]
+        input_states = tf.transpose(tf.stack(input_states), [1, 0, 2])  # [N, L, D]
         facts = []
         for n in range(N):
             filtered = tf.boolean_mask(input_states[n, :, :], input_mask[n, :])  # [?, D]
-            padding = tf.zeros(tf.pack([F - tf.shape(filtered)[0], d]))
-            facts.append(tf.concat(0, [filtered, padding]))  # [F, D]
+            padding = tf.zeros(tf.stack([F - tf.shape(filtered)[0], d]))
+            facts.append(tf.concat(axis=0, values=[filtered, padding]))  # [F, D]
 
-        facked = tf.pack(facts)  # packing for transpose... I hate TF so much
-        facts = tf.unpack(tf.transpose(facked, [1, 0, 2]), num=F)  # F x [N, D]
+        facked = tf.stack(facts)  # packing for transpose... I hate TF so much
+        facts = tf.unstack(tf.transpose(facked, [1, 0, 2]), num=F)  # F x [N, D]
 
         # Episodic Memory
         with tf.variable_scope('episodic') as scope:
@@ -72,7 +72,7 @@ class DMN(BaseModel):
 
         with tf.name_scope('Loss'):
             # Cross-Entropy loss
-            cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits, answer)
+            cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=answer)
             loss = tf.reduce_mean(cross_entropy)
             total_loss = loss + params.weight_decay * tf.add_n(tf.get_collection('l2'))
 
@@ -106,7 +106,7 @@ class DMN(BaseModel):
         :return: list of 2D tensor that has shape [num_batch, wordvec_dim]
         """
         input_transposed = tf.transpose(input, [1, 0, 2])  # [L, N, V]
-        return tf.unpack(input_transposed)
+        return tf.unstack(input_transposed)
 
     def preprocess_batch(self, batches):
         """ Vectorizes padding and masks last word of sentence. (EOS token)

@@ -30,7 +30,7 @@ class AttnGRU:
         b = bias('b', D, bias_default)
 
         if self.batch_norm:
-            with tf.variable_scope('Linear1'):
+            with tf.variable_scope('Linear1') as scope:
                 x_w = batch_norm(tf.matmul(x, w), is_training=self.is_training)
             with tf.variable_scope('Linear2'):
                 h_u = batch_norm(tf.matmul(h, u), is_training=self.is_training)
